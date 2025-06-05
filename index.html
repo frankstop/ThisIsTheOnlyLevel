@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>This Is The Only Level</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #2c3e50; /* Dark blue-gray */
+            color: #ecf0f1; /* Light gray */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+            box-sizing: border-box;
+            overflow-x: hidden; /* Prevent horizontal scroll on small screens */
+        }
+        #gameContainer {
+            background-color: #34495e; /* Slightly lighter blue-gray */
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        canvas {
+            border: 3px solid #ecf0f1;
+            background-color: #7f8c8d; /* Muted gray for game area */
+            display: block;
+            margin: 0 auto;
+            max-width: 100%;
+            border-radius: 8px;
+        }
+        #gameTitle {
+            color: #e74c3c; /* Contrasting red */
+            margin-bottom: 15px;
+            font-size: 1.5em; /* Responsive font size */
+            cursor: default; /* Default cursor, changes on stage 5 */
+            padding: 10px;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        #messageArea {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #c0392b; /* Reddish for emphasis */
+            border-radius: 8px;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em; /* Responsive font size */
+            line-height: 1.4;
+        }
+        #stageIndicator {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #f1c40f; /* Yellow */
+        }
+
+        /* Ensure elements fit on smaller screens */
+        @media (max-width: 600px) {
+            #gameTitle {
+                font-size: 1.2em;
+            }
+            #messageArea {
+                font-size: 0.7em;
+            }
+            #gameContainer {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer" class="w-full max-w-2xl">
+        <h1 id="gameTitle">This Is The Only Level</h1>
+        <canvas id="gameCanvas"></canvas>
+        <div id="stageIndicator">Stage: 1/6</div>
+        <div id="messageArea">Loading...</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameTitleElement = document.getElementById('gameTitle');
+        const messageArea = document.getElementById('messageArea');
+        const stageIndicator = document.getElementById('stageIndicator');
+
+        // Game dimensions - adjust for responsiveness if possible, but fixed for simplicity first
+        let canvasWidth = 600;
+        let canvasHeight = 350;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+
+        // Game variables
+        let currentStage = 0;
+        const totalStages = 6; // 0 to 5
+
+        // Player (Elephant)
+        const player = {
+            x: 50,
+            y: 50,
+            width: 25,
+            height: 20,
+            speed: 3,
+            jumpStrength: 8, // Adjusted for lower gravity
+            dx: 0,
+            dy: 0,
+            onGround: false,
+            color: '#bdc3c7', // Light gray elephant
+            visible: true
+        };
+
+        // Environment
+        const gravity = 0.3; // Reduced gravity
+        let platforms = [];
+        let spikes = [];
+        let goal = { x: 0, y: 0, width: 0, height: 0, color: '#2ecc71', isOpen: true }; // Green pipe
+        let button = { x: 0, y: 0, width: 0, height: 0, color: '#3498db', isPressed: false, originalColor: '#3498db', pressedColor: '#2980b9'}; // Blue button
+
+        const keys = {
+            ArrowLeft: false,
+            ArrowRight: false,
+            ArrowUp: false
+        };
+
+        // Level Setup
+        function setupLevel() {
+            player.x = 50;
+            player.y = 50; // Start high
+            player.dx = 0;
+            player.dy = 0;
+            player.onGround = false;
+            player.visible = true; // Make sure player is visible at start of each stage
+
+            platforms = [
+                { x: 0, y: 100, width: 150, height: 15, color: '#95a5a6' },    // Start platform
+                { x: 200, y: 180, width: 130, height: 15, color: '#95a5a6' }, // Middle platform
+                { x: 400, y: 260, width: 120, height: 15, color: '#95a5a6' }, // Lower-mid platform
+                { x: 0, y: canvas.height - 30, width: canvas.width, height: 30, color: '#7f8c8d' } // Ground
+            ];
+
+            spikes = [
+                 { x: 340, y: canvas.height - 30 - 15, width: 50, height: 15, color: '#e74c3c' } // Spikes on ground
+            ];
+            
+            goal = { x: canvas.width - 70, y: canvas.height - 30 - 40, width: 30, height: 40, color: '#2ecc71', isOpen: true };
+            
+            button = { 
+                x: 240, y: 180 - 20, width: 30, height: 15, 
+                color: '#3498db', isPressed: false, 
+                originalColor: '#3498db', pressedColor: '#2980b9' 
+            };
+
+            // Stage-specific setups
+            gameTitleElement.style.cursor = 'default'; // Reset cursor for title
+            gameTitleElement.removeEventListener('click', titleClickHandler); // Remove previous listener
+
+            goal.isOpen = true; // Default to open unless stage changes it
+            button.isPressed = false; // Reset button
+            button.color = button.originalColor;
+
+            stageIndicator.textContent = `Stage: ${currentStage + 1}/${totalStages}`;
+
+            switch (currentStage) {
+                case 0: // Standard Controls
+                    messageArea.textContent = "Arrow Keys to Move. Up to Jump. Reach the Pipe!";
+                    break;
+                case 1: // Reversed Horizontal Controls
+                    messageArea.textContent = "Feeling Dizzy? Controls are... different.";
+                    break;
+                case 2: // Press the Button
+                    messageArea.textContent = "That button seems important now.";
+                    goal.isOpen = false; // Pipe closed until button pressed
+                    break;
+                case 3: // Don't Press Up
+                    messageArea.textContent = "Maybe jumping isn't the answer here.";
+                     // Level designed to be passable by falling; pressing up will reset.
+                    break;
+                case 4: // Invisibility
+                    messageArea.textContent = "Trust your senses... and memory.";
+                    player.visible = false;
+                    break;
+                case 5: // Click the Title
+                    messageArea.textContent = "Think outside the box... literally.";
+                    gameTitleElement.style.cursor = 'pointer';
+                    gameTitleElement.addEventListener('click', titleClickHandler);
+                    goal.isOpen = false; // In-game pipe is a decoy
+                    break;
+                case 6: // You Win (This is effectively stage 7, game ends)
+                    messageArea.textContent = "You beat the only level! Congratulations!";
+                    // Stop game loop or show a final screen
+                    return; // Exit setup, game loop will be stopped
+            }
+        }
+        
+        function titleClickHandler() {
+            if (currentStage === 5) {
+                advanceStage();
+            }
+        }
+
+        function resetPlayer() {
+            player.x = 50;
+            player.y = 50;
+            player.dx = 0;
+            player.dy = 0;
+            player.onGround = false;
+            if (currentStage === 4) player.visible = false; // Keep invisible if on stage 4
+            else player.visible = true;
+
+            // If resetting on stage 2, ensure button state is also reset visually and functionally
+            if (currentStage === 2) {
+                button.isPressed = false;
+                button.color = button.originalColor;
+                goal.isOpen = false;
+            }
+        }
+
+        function advanceStage() {
+            currentStage++;
+            if (currentStage >= totalStages) { // totalStages is the number of playable stages (0-5)
+                currentStage = 6; // Go to win message "stage"
+                setupLevel(); // Setup for win message
+                // Consider stopping the game loop here explicitly if needed
+            } else {
+                setupLevel();
+                resetPlayer();
+            }
+        }
+
+        // Event Listeners
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            // Prevent page scroll for arrow keys
+            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        function handleInput() {
+            player.dx = 0; // Horizontal speed reset each frame
+
+            let moveLeft = keys['ArrowLeft'];
+            let moveRight = keys['ArrowRight'];
+
+            if (currentStage === 1) { // Reversed controls
+                if (keys['ArrowLeft']) player.dx = player.speed;
+                if (keys['ArrowRight']) player.dx = -player.speed;
+            } else { // Normal controls
+                if (keys['ArrowLeft']) player.dx = -player.speed;
+                if (keys['ArrowRight']) player.dx = player.speed;
+            }
+
+            if (keys['ArrowUp']) {
+                if (currentStage === 3) { // Don't Press Up
+                    messageArea.textContent = "Oops! Jumping was a bad idea here. Try again.";
+                    resetPlayer(); // Reset on this stage for pressing up
+                } else if (player.onGround) {
+                    player.dy = -player.jumpStrength;
+                    player.onGround = false;
+                }
+            }
+        }
+
+        function update() {
+            if (currentStage >= totalStages) return; // Stop updates if game won
+
+            handleInput();
+
+            // Apply gravity
+            player.dy += gravity;
+            player.y += player.dy;
+            player.x += player.dx;
+            player.onGround = false; // Assume not on ground until collision check
+
+            // Collision with platforms
+            platforms.forEach(platform => {
+                if (player.x < platform.x + platform.width &&
+                    player.x + player.width > platform.x &&
+                    player.y + player.height > platform.y &&
+                    player.y + player.height - player.dy <= platform.y +1) { // Check from previous position
+                    
+                    if(player.dy >=0){ // Only land if falling or moving horizontally onto it
+                        player.y = platform.y - player.height;
+                        player.dy = 0;
+                        player.onGround = true;
+                    }
+                }
+                // Basic side collision (simple stop)
+                if (player.y + player.height > platform.y && player.y < platform.y + platform.height) {
+                    // Check right side of player against left side of platform
+                    if (player.x + player.width > platform.x && player.x + player.width - player.dx < platform.x + 5 && player.dx > 0) {
+                        player.x = platform.x - player.width;
+                        player.dx = 0;
+                    }
+                    // Check left side of player against right side of platform
+                    if (player.x < platform.x + platform.width && player.x - player.dx > platform.x + platform.width -5 && player.dx < 0) {
+                        player.x = platform.x + platform.width;
+                        player.dx = 0;
+                    }
+                }
+            });
+            
+            // Collision with canvas boundaries
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+            if (player.y < 0) { // Hit ceiling
+                 player.y = 0;
+                 player.dy = 0; // Stop upward movement
+            }
+
+
+            // Fall off screen (reset)
+            if (player.y + player.height > canvas.height + 50) { // Allow some leeway below ground
+                 if (currentStage < totalStages) { // only reset if not on win screen
+                    messageArea.textContent = "Fell into the void! Try again.";
+                    resetPlayer();
+                 }
+            }
+
+
+            // Collision with spikes
+            spikes.forEach(spike => {
+                if (player.x < spike.x + spike.width &&
+                    player.x + player.width > spike.x &&
+                    player.y < spike.y + spike.height &&
+                    player.y + player.height > spike.y) {
+                    messageArea.textContent = "Ouch! Hit the spikes. Restarting stage.";
+                    resetPlayer();
+                }
+            });
+
+            // Collision with button
+            if (currentStage === 2 && !button.isPressed) {
+                if (player.x < button.x + button.width &&
+                    player.x + player.width > button.x &&
+                    player.y < button.y + button.height &&
+                    player.y + player.height > button.y) {
+                    button.isPressed = true;
+                    button.color = button.pressedColor;
+                    goal.isOpen = true;
+                    messageArea.textContent = "Button pressed! The way is open.";
+                }
+            }
+
+            // Collision with goal
+            if (goal.isOpen &&
+                player.x < goal.x + goal.width &&
+                player.x + player.width > goal.x &&
+                player.y < goal.y + goal.height &&
+                player.y + player.height > goal.y) {
+                advanceStage();
+            }
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#7f8c8d'; // Background of game area
+            ctx.fillRect(0,0,canvas.width, canvas.height);
+
+
+            // Draw platforms
+            platforms.forEach(platform => {
+                ctx.fillStyle = platform.color;
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                ctx.strokeStyle = '#616A6B'; // Darker border for platforms
+                ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+            });
+
+            // Draw spikes (as simple rectangles for now)
+            spikes.forEach(spike => {
+                ctx.fillStyle = spike.color;
+                // Draw as a set of triangles for a more "spiky" look
+                const spikeCount = Math.floor(spike.width / 10); // Number of individual spikes
+                const spikeBaseWidth = spike.width / spikeCount;
+                for (let i = 0; i < spikeCount; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(spike.x + i * spikeBaseWidth, spike.y + spike.height);
+                    ctx.lineTo(spike.x + (i + 0.5) * spikeBaseWidth, spike.y);
+                    ctx.lineTo(spike.x + (i + 1) * spikeBaseWidth, spike.y + spike.height);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            });
+
+            // Draw button
+            if (currentStage === 2 || (button.isPressed && currentStage > 2)) { // Show button on stage 2, or if pressed on later stages for context
+                ctx.fillStyle = button.color;
+                ctx.fillRect(button.x, button.y, button.width, button.height);
+                ctx.strokeStyle = '#2c3e50';
+                ctx.strokeRect(button.x, button.y, button.width, button.height);
+            }
+
+
+            // Draw goal
+            ctx.fillStyle = goal.isOpen ? goal.color : '#717d7e'; // Dim if closed
+            ctx.fillRect(goal.x, goal.y, goal.width, goal.height);
+            ctx.strokeStyle = goal.isOpen ? '#27ae60' : '#566573'; // Darker border
+            ctx.strokeRect(goal.x, goal.y, goal.width, goal.height);
+            // Pipe opening illusion
+            if(goal.isOpen){
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(goal.x + goal.width/4, goal.y, goal.width/2, goal.height/4);
+            }
+
+
+            // Draw player (Elephant)
+            if (player.visible) {
+                ctx.fillStyle = player.color;
+                // Simple elephant: body and a trunk
+                ctx.fillRect(player.x, player.y, player.width, player.height); // Body
+                // Trunk (simple rectangle for now)
+                // Facing right:
+                if( (currentStage === 1 && player.dx < 0) || (currentStage !== 1 && player.dx > 0) || player.dx === 0){
+                     ctx.fillRect(player.x + player.width, player.y + player.height / 3, 8, 5);
+                } else { // Facing left
+                     ctx.fillRect(player.x - 8, player.y + player.height / 3, 8, 5);
+                }
+                ctx.strokeStyle = '#2c3e50'; // Dark border for player
+                ctx.strokeRect(player.x, player.y, player.width, player.height);
+            }
+
+             // If game is won, display final message on canvas too.
+            if (currentStage >= totalStages) {
+                ctx.fillStyle = "rgba(0,0,0,0.7)";
+                ctx.fillRect(0,0, canvas.width, canvas.height);
+                ctx.font = "24px 'Press Start 2P'";
+                ctx.fillStyle = "#fff";
+                ctx.textAlign = "center";
+                ctx.fillText("You Win!", canvas.width / 2, canvas.height / 2 - 20);
+                ctx.font = "16px 'Press Start 2P'";
+                ctx.fillText("Thanks for playing!", canvas.width / 2, canvas.height / 2 + 20);
+            }
+        }
+        
+        let lastTime = 0;
+        const desiredFPS = 60;
+        const frameTime = 1000 / desiredFPS;
+
+        function gameLoop(currentTime) {
+            if (currentStage >= totalStages && lastTime !==0) { // Check lastTime to ensure it runs at least once for win message
+                 draw(); // Draw final win screen once
+                 return; // Stop the loop
+            }
+            
+            requestAnimationFrame(gameLoop);
+            
+            const deltaTime = currentTime - lastTime;
+            if(deltaTime < frameTime && lastTime !==0){ // ensure consistent frame rate, but run first frame immediately
+                return;
+            }
+            lastTime = currentTime - (deltaTime % frameTime);
+
+
+            update();
+            draw();
+        }
+
+        // Initial setup
+        setupLevel();
+        gameLoop(0); // Start the game loop
+
+        // Responsive canvas attempt (basic, might need more robust solution)
+        function resizeCanvas() {
+            const containerWidth = document.getElementById('gameContainer').offsetWidth - 40; // Subtract padding
+            const aspectRatio = 600 / 350; // Original aspect ratio
+
+            let newWidth = Math.min(containerWidth, 600); // Max width of 600
+            let newHeight = newWidth / aspectRatio;
+
+            if (newHeight > window.innerHeight * 0.6) { // Max 60% of viewport height
+                newHeight = window.innerHeight * 0.6;
+                newWidth = newHeight * aspectRatio;
+            }
+            
+            canvas.width = newWidth;
+            canvas.height = newHeight;
+
+            // Recalculate scale factor (optional for more complex scaling)
+            // let scaleX = newWidth / 600;
+            // let scaleY = newHeight / 350;
+            // ctx.scale(scaleX, scaleY); // This makes drawing complex, better to adjust game coords
+
+            // For simplicity in this example, we'll just redraw.
+            // A more robust solution would involve scaling all game coordinates.
+            // For now, this just resizes the canvas element, internal game logic still uses fixed coords.
+            // This means the game might not perfectly fit or scale visually on resize without further logic.
+            // For this example, we'll stick to fixed internal coordinates and let CSS handle initial sizing.
+            // The current setup will keep game logic coordinates fixed and CSS scales canvas.
+            // Let's reset to original fixed size and let CSS max-width handle it.
+            canvas.width = 600;
+            canvas.height = 350;
+
+
+            if (currentStage < totalStages) { // Only redraw if game is active
+                draw(); // Redraw with new dimensions (or scaled if implemented)
+            }
+        }
+        // window.addEventListener('resize', resizeCanvas);
+        // Initial size set via attributes, max-width in CSS handles shrinking.
+        // Calling resizeCanvas() on load could also be done. For now, fixed size.
+
+    </script>
+</body>
+</html>
